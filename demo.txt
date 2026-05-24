@@ -1,0 +1,31 @@
+true:
+{
+  "tenure": 2, "MonthlyCharges": 89.5, "TotalCharges": 179.0,
+  "SeniorCitizen": 0, "gender": "Female", "Partner": "No",
+  "Dependents": "No", "PhoneService": "Yes", "MultipleLines": "Yes",
+  "InternetService": "Fiber optic", "OnlineSecurity": "No",
+  "OnlineBackup": "No", "DeviceProtection": "No", "TechSupport": "No",
+  "StreamingTV": "Yes", "StreamingMovies": "Yes",
+  "Contract": "Month-to-month", "PaperlessBilling": "Yes",
+  "PaymentMethod": "Electronic check"
+}
+false:
+{
+  "tenure": 60, "MonthlyCharges": 45.0, "TotalCharges": 2700.0,
+  "SeniorCitizen": 0, "gender": "Male", "Partner": "Yes",
+  "Dependents": "Yes", "PhoneService": "Yes", "MultipleLines": "No",
+  "InternetService": "DSL", "OnlineSecurity": "Yes",
+  "OnlineBackup": "Yes", "DeviceProtection": "Yes", "TechSupport": "Yes",
+  "StreamingTV": "No", "StreamingMovies": "No",
+  "Contract": "Two year", "PaperlessBilling": "No",
+  "PaymentMethod": "Bank transfer (automatic)"
+}
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+5 predections 
+$url = "https://churn-api-latest-lbqq.onrender.com/predict"
+$headers = @{"Content-Type" = "application/json"}
+$body = '{"tenure":2,"MonthlyCharges":89.5,"TotalCharges":179.0,"SeniorCitizen":0,"gender":"Female","Partner":"No","Dependents":"No","PhoneService":"Yes","MultipleLines":"Yes","InternetService":"Fiber optic","OnlineSecurity":"No","OnlineBackup":"No","DeviceProtection":"No","TechSupport":"No","StreamingTV":"Yes","StreamingMovies":"Yes","Contract":"Month-to-month","PaperlessBilling":"Yes","PaymentMethod":"Electronic check"}'
+1..5 | ForEach-Object {
+    $r = Invoke-RestMethod -Method POST -Uri $url -Headers $headers -Body $body
+    Write-Host "[$_] prob=$($r.churn_probability) churn=$($r.churn_prediction)"
+}

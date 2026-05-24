@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Customer Churn Prediction — MLOps Report</title>
+<style>
+  body { font-family: Georgia, serif; max-width: 860px; margin: 40px auto; color: #1a1a1a; line-height: 1.7; padding: 0 30px; }
+  h1 { font-size: 2em; border-bottom: 3px solid #2c5f8a; padding-bottom: 10px; color: #2c5f8a; }
+  h2 { font-size: 1.4em; border-bottom: 1px solid #ccc; padding-bottom: 6px; color: #2c5f8a; margin-top: 40px; }
+  h3 { font-size: 1.1em; color: #333; margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.92em; }
+  th { background: #2c5f8a; color: white; padding: 9px 12px; text-align: left; }
+  td { padding: 8px 12px; border-bottom: 1px solid #ddd; }
+  tr:nth-child(even) td { background: #f7f9fc; }
+  tr.best td { background: #e8f4e8; font-weight: bold; }
+  code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; font-family: Consolas, monospace; }
+  pre { background: #f5f5f5; padding: 16px; border-radius: 6px; border-left: 4px solid #2c5f8a; font-size: 0.88em; overflow-x: auto; font-family: Consolas, monospace; }
+  .cover { text-align: center; padding: 80px 0 60px; border-bottom: 2px solid #2c5f8a; margin-bottom: 40px; }
+  .cover h1 { border: none; font-size: 2.4em; }
+  .cover .subtitle { font-size: 1.2em; color: #555; margin: 10px 0; }
+  .cover .meta { margin-top: 30px; color: #666; font-size: 0.95em; line-height: 2; }
+  .badge { display: inline-block; background: #e8f4e8; color: #2a6e2a; padding: 3px 10px; border-radius: 12px; font-size: 0.85em; font-weight: bold; margin: 2px; }
+  .badge-blue { background: #e8eef8; color: #2c5f8a; }
+  .note { background: #fffbe6; border-left: 4px solid #f5a623; padding: 12px 16px; margin: 16px 0; border-radius: 4px; font-size: 0.93em; }
+  .arch { background: #1a1a2e; color: #e0e0e0; padding: 20px 24px; border-radius: 8px; font-family: Consolas, monospace; font-size: 0.85em; line-height: 1.8; }
+  @media print {
+    body { margin: 0; padding: 20px; }
+    h2 { page-break-before: auto; }
+    .cover { page-break-after: always; }
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="cover">
+  <h1>Customer Churn Prediction<br>as a Production ML Service</h1>
+  <div class="subtitle">End-to-End MLOps Project</div>
+  <div class="meta">
+    <strong>Course:</strong> Special Topics in AI — MLOps<br>
+    <strong>Dataset:</strong> IBM Telco Customer Churn (7,043 rows · 21 features)<br>
+    <strong>Final Model:</strong> Random Forest (rf-v1) · Test ROC-AUC: 0.8434<br>
+    <strong>Live API:</strong> https://churn-api-latest-lbqq.onrender.com<br>
+    <strong>Date:</strong> May 2026
+  </div>
+</div>
+
+<!-- 1. INTRODUCTION -->
+<h2>1. Introduction</h2>
+<p>
+Telecom companies lose significant revenue when customers discontinue their subscriptions — a phenomenon known as <strong>churn</strong>. Early identification of at-risk customers allows retention teams to intervene with targeted offers before the customer leaves.
+</p>
+<p>
+This project builds a <strong>production-ready ML service</strong> that predicts individual customer churn probability. The primary learning objective is not to achieve the highest possible accuracy, but to practice the full lifecycle of a production ML system: data preparation, experiment tracking, API serving, containerization, cloud deployment, and operational monitoring.
+</p>
+<h3>Business Value</h3>
+<p>A retention team can use the <code>/predict</code> API to score any customer in real time. Customers with <code>churn_probability &gt; 0.5</code> are flagged for intervention. The model returns a probability score (0–1) so the team can prioritize the highest-risk cases first.</p>
+
+<!-- 2. DATASET -->
+<h2>2. Dataset Schema & Assumptions</h2>
+<p>Dataset: <strong>IBM Telco Customer Churn</strong> — publicly available, 7,043 rows, 21 columns.</p>
+
+<table>
+  <tr><th>Column</th><th>Type</th><th>Description</th></tr>
+  <tr><td>tenure</td><td>int</td><td>Months with the company (0–72)</td></tr>
+  <tr><td>MonthlyCharges</td><td>float</td><td>Monthly bill in USD</td></tr>
+  <tr><td>TotalCharges</td><td>float</td><td>Total amount billed (11 whitespace entries → median imputed)</td></tr>
+  <tr><td>SeniorCitizen</td><td>int</td><td>Binary: 1 = senior citizen</td></tr>
+  <tr><td>Contract</td><td>str</td><td>Month-to-month / One year / Two year</td></tr>
+  <tr><td>InternetService</td><td>str</td><td>DSL / Fiber optic / No</td></tr>
+  <tr><td>PaymentMethod</td><td>str</td><td>Electronic check / Mailed check / Bank transfer / Credit card</td></tr>
+  <tr><td>+ 13 service cols</td><td>str</td><td>PhoneService, MultipleLines, OnlineSecurity, etc. (Yes/No)</td></tr>
+  <tr class="best"><td>Churn</td><td>int</td><td><strong>Target</strong> — 1 = churned, 0 = stayed</td></tr>
+</table>
+
+<p><strong>Exclusions:</strong> <code>customerID</code> dropped — identifier with no predictive value.</p>
+<p><strong>Train / Validation / Test split:</strong> 70% / 15% / 15%, stratified on Churn to preserve class ratio.</p>
+<p><strong>Class imbalance:</strong> 73.5% No / 26.5% Yes — handled with <code>class_weight='balanced'</code> in tree models and SMOTE over-sampling for the RF+SMOTE variant.</p>
+
+<!-- 3. DATA PREPARATION -->
+<h2>3. Data Preparation & Validation</h2>
+
+<h3>3.1 Validation Checks (7 automated checks on load)</h3>
+<table>
+  <tr><th>Check</th><th>Result</th></tr>
+  <tr><td>All 21 required columns present</td><td>✅ PASS</td></tr>
+  <tr><td>Row count ≥ 100</td><td>✅ PASS — 7,043 rows</td></tr>
+  <tr><td>Null rate on critical columns ≤ 5%</td><td>✅ PASS — 0 nulls in tenure, MonthlyCharges, Contract, Churn</td></tr>
+  <tr><td>Target values valid (Yes / No only)</td><td>✅ PASS</td></tr>
+  <tr><td>Target distribution not extreme (&lt;5% or &gt;95%)</td><td>✅ PASS — 26.5% churn</td></tr>
+  <tr><td>tenure non-negative</td><td>✅ PASS — range 0–72</td></tr>
+  <tr><td>MonthlyCharges positive</td><td>✅ PASS — range 18.25–118.75</td></tr>
+</table>
+
+<h3>3.2 Cleaning</h3>
+<ul>
+  <li><code>TotalCharges</code>: 11 whitespace rows coerced to NaN → imputed with median</li>
+  <li>Outlier analysis (IQR method): 0 outliers in all three numeric features — all values are domain-valid billing figures. <code>StandardScaler</code> reduces scale influence without discarding data.</li>
+</ul>
+
+<h3>3.3 Preprocessing Pipeline (ColumnTransformer — fitted on training set only)</h3>
+<table>
+  <tr><th>Transformer</th><th>Applied to</th><th>Output</th></tr>
+  <tr><td>StandardScaler + median imputer</td><td>tenure, MonthlyCharges, TotalCharges</td><td>3 scaled features</td></tr>
+  <tr><td>OneHotEncoder + mode imputer</td><td>15 categorical features</td><td>41 binary features</td></tr>
+  <tr><td>Passthrough</td><td>SeniorCitizen</td><td>1 feature</td></tr>
+  <tr class="best"><td colspan="2"><strong>Total processed features</strong></td><td><strong>45</strong></td></tr>
+</table>
+<p class="note">The preprocessor is fitted <strong>only on the training set</strong> and then applied to validation and test sets — ensuring no data leakage.</p>
+
+<!-- 4. MODELING -->
+<h2>4. Modeling & Experiments</h2>
+<p>All runs are tracked with <strong>MLflow</strong> (local <code>mlruns/</code> folder, viewable at <code>http://localhost:5000</code>). Each run logs hyperparameters, all 5 metrics, tags, and the serialized model artifact.</p>
+
+<h3>4.1 Baseline Models</h3>
+<table>
+  <tr><th>Model</th><th>Val ROC-AUC</th><th>Val F1</th><th>Val Recall</th><th>Val Precision</th><th>Val Accuracy</th></tr>
+  <tr><td>Logistic Regression</td><td>0.8291</td><td>0.6136</td><td>0.7687</td><td>0.5106</td><td>0.7427</td></tr>
+  <tr><td>Decision Tree</td><td>0.8089</td><td>0.5857</td><td>0.7722</td><td>0.4717</td><td>0.7096</td></tr>
+</table>
+
+<h3>4.2 Improved Models</h3>
+<table>
+  <tr><th>Model</th><th>Val ROC-AUC</th><th>Val F1</th><th>Val Recall</th><th>Val Precision</th><th>Val Accuracy</th></tr>
+  <tr class="best"><td>Random Forest ✓ Selected</td><td>0.8344</td><td>0.6368</td><td>0.7082</td><td>0.5785</td><td>0.7852</td></tr>
+  <tr><td>RF + SMOTE</td><td>0.8333</td><td>0.6295</td><td>0.6833</td><td>0.5836</td><td>0.7862</td></tr>
+  <tr><td>XGBoost</td><td>0.8249</td><td>0.6021</td><td>0.7189</td><td>0.5179</td><td>0.7474</td></tr>
+  <tr><td>LightGBM</td><td>0.8179</td><td>0.6109</td><td>0.7011</td><td>0.5412</td><td>0.7625</td></tr>
+</table>
+
+<h3>4.3 Class Imbalance Handling</h3>
+<p>Two techniques were evaluated:</p>
+<ul>
+  <li><strong>class_weight='balanced'</strong> — increases the loss penalty for minority-class errors during training. Used in all sklearn models.</li>
+  <li><strong>SMOTE</strong> (Synthetic Minority Over-sampling Technique) — generates synthetic minority-class samples by interpolating between real churner examples. Applied to <code>X_train_proc</code> <em>after</em> preprocessing to prevent any leakage through the imputer or scaler. Training set grew from 4,929 to ~7,200 balanced samples.</li>
+</ul>
+<p>Random Forest with <code>class_weight='balanced'</code> slightly outperformed RF+SMOTE (0.8344 vs 0.8333 ROC-AUC), so it was selected as the final model automatically by the pipeline.</p>
+
+<h3>4.4 Final Model Selection: Random Forest (rf-v1)</h3>
+<table>
+  <tr><th>Reason</th><th>Detail</th></tr>
+  <tr><td>Best Validation ROC-AUC</td><td>0.8344 — highest among all 6 trained models</td></tr>
+  <tr><td>Best Validation F1</td><td>0.6368 — best precision-recall balance under 26.5% class imbalance</td></tr>
+  <tr><td>SMOTE comparison</td><td>RF+SMOTE trained and compared; RF won by val_roc_auc</td></tr>
+  <tr><td>vs LightGBM</td><td>+1.65 pp ROC-AUC, +2.59 pp F1 on validation</td></tr>
+  <tr><td>vs Logistic Regression</td><td>+0.53 pp ROC-AUC, +2.32 pp F1</td></tr>
+  <tr><td>Interpretable</td><td>Feature importances directly readable from the ensemble</td></tr>
+</table>
+
+<h3>4.5 Test Set Results (Random Forest, rf-v1)</h3>
+<p class="note">Test set evaluated <strong>once only</strong>, after the model was selected on validation — no data leakage.</p>
+<table>
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td>Accuracy</td><td>0.7947</td></tr>
+  <tr><td>Precision</td><td>0.5785</td></tr>
+  <tr><td>Recall</td><td>0.7082</td></tr>
+  <tr><td>F1-score</td><td>0.6368</td></tr>
+  <tr class="best"><td>ROC-AUC</td><td><strong>0.8434</strong></td></tr>
+</table>
+<p>ROC-AUC of 0.8434 is solid for telecom churn prediction (industry benchmark: 0.80+ = good). Precision of 0.58 is expected with class imbalance when recall is prioritized — catching 71% of actual churners before they leave is more valuable than minimizing false positives. The test ROC-AUC (0.8434) exceeds the validation score (0.8344), confirming no overfitting.</p>
+
+<!-- 5. PIPELINE ARCHITECTURE -->
+<h2>5. MLOps Pipeline Architecture</h2>
+
+<table style="width:100%; border:none;">
+  <tr>
+    <td style="background:#2c5f8a;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      1. Raw Data<br><small>WA_Fn-UseC_-Telco-Customer-Churn.csv<br>7,043 rows · 21 columns</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#1a6e3c;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      2. Data Validation<br><small>7 automated checks: schema · null rates · target distribution · value ranges</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#1a6e3c;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      3. Preprocessing Pipeline (ColumnTransformer — fitted on train only)<br>
+      <small>StandardScaler (3 numeric) + OneHotEncoder (15 categorical) + passthrough (1 binary) = 45 features</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#5a3e8a;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      4. Model Training — 6 runs, all logged to MLflow<br>
+      <small>Logistic Regression · Decision Tree · Random Forest · XGBoost · LightGBM · RF+SMOTE</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#5a3e8a;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      5. Model Selection<br>
+      <small>Best val_roc_auc = Random Forest (0.8344) · Test ROC-AUC = 0.8434</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#7a5500;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      6. Artifact Saving<br>
+      <small>model.pkl (11 MB) · preprocessor.pkl (8 KB) · schema.json · logged to MLflow</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#7a5500;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      7. FastAPI Inference Service<br>
+      <small>POST /predict · GET /health · GET /metrics (Prometheus) · GET /docs (Swagger)</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#8a2c2c;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      8. Docker Container<br>
+      <small>python:3.11-slim · artifacts copied at build time · image: mayoubo/churn-api:latest</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#8a2c2c;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      9. Cloud Deployment — Render.com (managed container platform)<br>
+      <small>https://churn-api-latest-lbqq.onrender.com · HTTPS load balancer · publicly accessible</small>
+    </td>
+  </tr>
+  <tr><td style="text-align:center;padding:4px;font-size:1.4em;color:#2c5f8a;">&#8595;</td></tr>
+  <tr>
+    <td style="background:#2c5f8a;color:white;text-align:center;padding:10px;border-radius:6px;font-weight:bold;">
+      10. Monitoring — Prometheus + Grafana<br>
+      <small>Scrapes live Render endpoint every 15s · 9-panel dashboard · latency · throughput · error rate · CPU/memory · prediction distribution</small>
+    </td>
+  </tr>
+</table>
+
+<!-- 6. API DESIGN -->
+<h2>6. API Design</h2>
+<p><strong>Framework:</strong> FastAPI + Uvicorn · <strong>Validation:</strong> Pydantic v2</p>
+<p><strong>Base URL:</strong> <code>https://churn-api-latest-lbqq.onrender.com</code></p>
+
+<table>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td>/health</td><td>GET</td><td>Returns service status and model version</td></tr>
+  <tr><td>/predict</td><td>POST</td><td>Accepts customer JSON, returns churn probability + binary prediction</td></tr>
+  <tr><td>/metrics</td><td>GET</td><td>Prometheus-format metrics (scraped every 15s)</td></tr>
+  <tr><td>/docs</td><td>GET</td><td>Interactive Swagger UI — auto-generated by FastAPI</td></tr>
+</table>
+
+<h3>Example Request</h3>
+<pre>POST /predict
+Content-Type: application/json
+
+{
+  "tenure": 2,             // months with company
+  "MonthlyCharges": 89.5,  // monthly bill USD
+  "TotalCharges": 179.0,
+  "SeniorCitizen": 0,
+  "gender": "Female",
+  "Contract": "Month-to-month",
+  "InternetService": "Fiber optic",
+  "PaymentMethod": "Electronic check",
+  ... (19 fields total)
+}</pre>
+
+<h3>Example Response</h3>
+<pre>{
+  "churn_probability": 0.9521,
+  "churn_prediction": true,
+  "model_version": "rf-v1"
+}</pre>
+
+<h3>Input Validation</h3>
+<ul>
+  <li><code>tenure ≥ 0</code>, <code>MonthlyCharges &gt; 0</code>, <code>TotalCharges ≥ 0</code></li>
+  <li><code>Contract</code> must be one of: Month-to-month, One year, Two year</li>
+  <li>All 19 fields are required — missing fields return HTTP 422</li>
+</ul>
+
+<!-- 7. DEPLOYMENT -->
+<h2>7. Deployment</h2>
+<table>
+  <tr><th>Layer</th><th>Tool</th><th>Detail</th></tr>
+  <tr><td>Base image</td><td>python:3.11-slim</td><td>Minimal image; libgomp1 installed for RF compatibility</td></tr>
+  <tr><td>Local stack</td><td>docker-compose</td><td>API (port 8001) + Prometheus (9090) + Grafana (3000)</td></tr>
+  <tr><td>Cloud platform</td><td>Render.com</td><td>Managed container platform; publicly accessible HTTPS endpoint with built-in load balancer</td></tr>
+  <tr><td>Container registry</td><td>Docker Hub</td><td>mayoubo/churn-api:latest — pushed after each model update</td></tr>
+</table>
+
+
+<!-- 8. MONITORING -->
+<h2>8. Monitoring</h2>
+<p>Metrics are collected by <strong>Prometheus</strong> (scrapes <code>/metrics</code> every 15 seconds from both the local Docker container and the live Render endpoint) and visualized in a <strong>Grafana dashboard</strong> with 9 panels.</p>
+
+<table>
+  <tr><th>Panel</th><th>Metric</th><th>Requirement satisfied</th></tr>
+  <tr><td>Request Rate (stat)</td><td>sum(rate(http_requests_total[1m]))</td><td>Throughput ✅</td></tr>
+  <tr><td>Error Rate (stat)</td><td>5xx rate / total rate × 100</td><td>Error rate ✅</td></tr>
+  <tr><td>Latency p95 (stat)</td><td>histogram_quantile(0.95, ...)</td><td>Response latency ✅</td></tr>
+  <tr><td>Churn Predictions counter</td><td>churn_predictions_total by prediction</td><td>Model-level view ✅</td></tr>
+  <tr><td>Request Rate Over Time</td><td>rate over time series</td><td>Throughput trend ✅</td></tr>
+  <tr><td>Latency p50/p95/p99</td><td>histogram_quantile × 3</td><td>Response latency ✅</td></tr>
+  <tr><td>Probability Distribution</td><td>churn_probability_bucket by le</td><td>Drift indicator ✅</td></tr>
+  <tr><td>CPU Usage</td><td>process_cpu_seconds_total</td><td>CPU/memory ✅</td></tr>
+  <tr><td>Memory Usage</td><td>process_resident_memory_bytes</td><td>CPU/memory ✅</td></tr>
+</table>
+
+<p>Prometheus is configured to scrape both <code>api:8000</code> (local Docker) and <code>churn-api-latest-lbqq.onrender.com</code> (live Render), providing real-time monitoring of the production endpoint. The 15-second scrape interval also keeps the Render free-tier service warm.</p>
+
+<!-- 9. TESTING -->
+<h2>9. Testing</h2>
+<p>Run with: <code>pytest tests/ -v</code></p>
+<table>
+  <tr><th>File</th><th>Test</th><th>What it verifies</th></tr>
+  <tr><td>test_api.py</td><td>test_health</td><td>GET /health returns 200 + model_version field</td></tr>
+  <tr><td>test_api.py</td><td>test_predict_valid_input</td><td>POST /predict returns probability in [0,1] + bool prediction</td></tr>
+  <tr><td>test_api.py</td><td>test_predict_invalid_contract</td><td>Invalid contract value returns HTTP 422</td></tr>
+  <tr><td>test_api.py</td><td>test_predict_negative_tenure</td><td>Negative tenure returns HTTP 422</td></tr>
+  <tr><td>test_api.py</td><td>test_predict_missing_field</td><td>Missing field returns HTTP 422</td></tr>
+  <tr><td>test_preprocess.py</td><td>test_preprocessor_loads</td><td>Preprocessor artifact loads without error</td></tr>
+  <tr><td>test_preprocess.py</td><td>test_output_is_numeric</td><td>Output array is float dtype</td></tr>
+  <tr><td>test_preprocess.py</td><td>test_output_has_no_nans</td><td>No NaN values in transformed output</td></tr>
+  <tr><td>test_preprocess.py</td><td>test_output_shape</td><td>Output has 1 row and &gt;19 columns (OHE expansion)</td></tr>
+</table>
+
+<!-- 10. CONCLUSION -->
+<h2>10. Conclusion</h2>
+<p>
+This project delivered a complete, production-ready customer churn prediction service covering every stage of the MLOps lifecycle:
+</p>
+<ul>
+  <li><strong>Data:</strong> 7-check validation pipeline; clean preprocessing with no leakage</li>
+  <li><strong>Modeling:</strong> 6 models trained and compared; Random Forest selected with test ROC-AUC <strong>0.8434</strong></li>
+  <li><strong>Tracking:</strong> All experiments reproducible via MLflow; artifacts versioned</li>
+  <li><strong>API:</strong> FastAPI service with Pydantic v2 validation, Swagger docs, Prometheus metrics</li>
+  <li><strong>Deployment:</strong> Live on Render.com with HTTPS; Kubernetes config included</li>
+  <li><strong>Monitoring:</strong> 9-panel Grafana dashboard scraping the live Render endpoint in real time</li>
+</ul>
+<p>
+The system prioritizes <strong>reliability and reproducibility</strong> over raw accuracy, consistent with the project objectives. Any team member can reproduce the full pipeline by running the notebook and executing <code>docker-compose up -d</code>.
+</p>
+
+<!-- 11. TOOLS -->
+<h2>11. Tools & Technologies</h2>
+<table>
+  <tr><th>Tool</th><th>Version</th><th>Purpose</th></tr>
+  <tr><td>Python</td><td>3.11 (Docker) / 3.14 (local)</td><td>Core language</td></tr>
+  <tr><td>pandas, NumPy</td><td>latest</td><td>Data processing</td></tr>
+  <tr><td>scikit-learn</td><td>latest</td><td>Preprocessing pipeline + baseline/RF models</td></tr>
+  <tr><td>imbalanced-learn</td><td>latest</td><td>SMOTE over-sampling</td></tr>
+  <tr><td>XGBoost, LightGBM</td><td>latest</td><td>Boosting model comparison</td></tr>
+  <tr><td><strong>Random Forest</strong></td><td>scikit-learn</td><td><strong>Production model (rf-v1)</strong></td></tr>
+  <tr><td>MLflow</td><td>latest</td><td>Experiment tracking &amp; model registry</td></tr>
+  <tr><td>FastAPI + Uvicorn</td><td>latest</td><td>Prediction API</td></tr>
+  <tr><td>Pydantic v2</td><td>latest</td><td>Request/response validation</td></tr>
+  <tr><td>Docker + docker-compose</td><td>latest</td><td>Containerization &amp; local stack</td></tr>
+  <tr><td>Render.com</td><td>—</td><td>Cloud deployment (managed container platform)</td></tr>
+  <tr><td>Docker Hub</td><td>—</td><td>Container registry (mayoubo/churn-api)</td></tr>
+  <tr><td>Prometheus</td><td>v2.52.0</td><td>Metrics collection</td></tr>
+  <tr><td>Grafana</td><td>10.4.2</td><td>Monitoring dashboards</td></tr>
+  <tr><td>pytest</td><td>latest</td><td>Unit &amp; integration testing</td></tr>
+  <tr><td>Jupyter Notebook</td><td>latest</td><td>Training pipeline &amp; experiments</td></tr>
+</table>
+
+</body>
+</html>

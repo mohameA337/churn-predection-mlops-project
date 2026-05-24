@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: churn_api_local
+    static_configs:
+      - targets:
+          - api:8000   # Docker service name — local docker-compose stack
+    metrics_path: /metrics
+
+  - job_name: churn_api_render
+    scheme: https
+    static_configs:
+      - targets:
+          - churn-api-latest-lbqq.onrender.com
+    metrics_path: /metrics
