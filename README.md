@@ -14,6 +14,7 @@ Built for a Semester 8 undergraduate MLOps course. Emphasizes reproducibility, c
 
 ## Project Structure
 
+<<<<<<< HEAD
 ```
 ├── churn_mlops.ipynb                    # Full training pipeline (data → model → artifacts)
 ├── app/
@@ -38,6 +39,12 @@ Built for a Semester 8 undergraduate MLOps course. Emphasizes reproducibility, c
 ├── .gitignore                           # Excludes mlruns/, artifacts/*, .env, etc.
 ├── README.md                            # This file
 └── WA_Fn-UseC_-Telco-Customer-Churn.csv # Input dataset (7,043 rows)
+=======
+```bash
+git clone https://github.com/mohameA337/churn-predection-mlops-project.git
+cd churn-mlops
+pip install -r api/requirements.txt
+>>>>>>> 8a77a60483c24d0127692ba2dd4609dbd91572e8
 ```
 
 ---
