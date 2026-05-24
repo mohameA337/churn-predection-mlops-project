@@ -7,7 +7,7 @@ End-to-end ML service that predicts telecom customer churn. Built for an undergr
 ## Setup
 
 ```bash
-git clone <your-repo>
+git clone https://github.com/mohameA337/churn-predection-mlops-project.git
 cd churn-mlops
 pip install -r api/requirements.txt
 ```
